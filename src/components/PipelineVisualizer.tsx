@@ -60,6 +60,36 @@ export default function PipelineVisualizer({
     setStreamedLogs([]);
   };
 
+  // Helper to determine the status of any of the 9 stages
+  const getStageStatus = (stageId: number): 'pending' | 'active' | 'success' | 'warning' | 'error' => {
+    if (currentResult) {
+      const stepResult = currentResult.steps[stageId - 1];
+      if (stepResult) {
+        if (stepResult.status === 'pending') {
+          return isRunning && activeStepIndex === stageId ? 'active' : 'pending';
+        }
+        return stepResult.status as 'success' | 'warning' | 'error';
+      }
+    }
+
+    if (isRunning) {
+      if (activeStepIndex === stageId) {
+        return 'active';
+      } else if (activeStepIndex > stageId) {
+        return 'success';
+      } else {
+        return 'pending';
+      }
+    }
+
+    if (activeStepIndex === stageId) {
+      return 'active';
+    } else if (activeStepIndex > stageId) {
+      return 'success';
+    }
+    return 'pending';
+  };
+
   // Run simulation sequence
   const startSimulation = () => {
     if (intervalRef.current) {
@@ -78,7 +108,14 @@ export default function PipelineVisualizer({
     setIsRunning(true);
     setActiveStepIndex(0);
     setCurrentResult(null);
-    setStreamedLogs(['[SYSTEM] Initializing VEKLOM v2.0 Execution Session...', `[SYSTEM] connection_id generated: conn_${Math.floor(Math.random() * 900000 + 100000)}`]);
+
+    const startTimestamp = new Date().toLocaleTimeString();
+    console.log(`[VEKLOM v2.0] [${startTimestamp}] [SYSTEM] Initializing VEKLOM v2.0 Execution Session...`);
+
+    setStreamedLogs([
+      `[${startTimestamp}] [SYSTEM] Initializing VEKLOM v2.0 Execution Session...`,
+      `[${startTimestamp}] [SYSTEM] connection_id generated: conn_${Math.floor(Math.random() * 900000 + 100000)}`
+    ]);
     setExpandedStep(1);
 
     // Compute final result context from static processor
@@ -96,11 +133,20 @@ export default function PipelineVisualizer({
         setActiveStepIndex(stepCounter);
         setExpandedStep(stepCounter);
 
-        // Append log files representation
-        const stepLogs = finalResult.steps[stepCounter - 1]?.details || [];
+        // Fetch corresponding details
+        const currentStep = finalResult.steps[stepCounter - 1];
+        const stepName = currentStep?.name || `Phase ${stepCounter}`;
+        const stepStatus = currentStep?.status || 'success';
+        const displayTime = new Date().toLocaleTimeString();
+
+        // 1. Output detailed verification to the window console
+        console.log(`[VEKLOM v2.0] [${displayTime}] [STAGE 0${stepCounter}] Name: "${stepName}" | Status: ${stepStatus.toUpperCase()} | Verification OK`);
+
+        // 2. Append representation to UI console logs
+        const stepLogs = currentStep?.details || [];
         setStreamedLogs(prev => [
           ...prev,
-          `[PHASE ${stepCounter}] ${finalResult.steps[stepCounter - 1]?.name} processing...`,
+          `[${displayTime}] [PHASE ${stepCounter}] ${stepName} - Status: ${stepStatus.toUpperCase()}`,
           ...stepLogs.map(l => `  > ${l}`)
         ]);
 
@@ -111,10 +157,16 @@ export default function PipelineVisualizer({
         setIsRunning(false);
         setCurrentResult(finalResult);
         onSimulationSuccess(finalResult);
+
+        const finishTime = new Date().toLocaleTimeString();
+        console.log(`[VEKLOM v2.0] [${finishTime}] [SYSTEM] Compilation finished. Authorization Status: ${finalResult.status.toUpperCase()}`);
+
         setStreamedLogs(prev => [
           ...prev,
-          `[SYSTEM] Compilation finished. Authorization Status: ${finalResult.status.toUpperCase()}`,
-          finalResult.evidence ? `[SYSTEM] Immutable proof saved successfully to ledger chain: ${finalResult.evidence.pglHash}` : '[SYSTEM] Suspended state preserved.'
+          `[${finishTime}] [SYSTEM] Compilation finished. Authorization Status: ${finalResult.status.toUpperCase()}`,
+          finalResult.evidence
+            ? `[${finishTime}] [SYSTEM] Immutable proof saved successfully to ledger chain: ${finalResult.evidence.pglHash}`
+            : `[${finishTime}] [SYSTEM] Suspended state preserved.`
         ]);
       }
     }, stepInterval);
@@ -145,24 +197,43 @@ export default function PipelineVisualizer({
       ? selectedScenario.customCheck(parsedInput, 'pgl_sha256_c23a1099fe42_ec4')
       : PRESET_SCENARIOS[0].customCheck!(parsedInput, 'pgl_sha256_c23a1099fe42_ec4');
 
+    const startFastTime = new Date().toLocaleTimeString();
+    console.log(`[VEKLOM v2.0] [${startFastTime}] [SYSTEM] Initializing VEKLOM v2.0 Execution Session (Fast-Forward to Stage ${targetStep})...`);
+
     // Build cumulative logs up to current targetStep
-    const logs = ['[SYSTEM] Initializing VEKLOM v2.0 Execution Session...', `[SYSTEM] connection_id generated: conn_${Math.floor(Math.random() * 900000 + 100000)}`];
+    const logs = [
+      `[${startFastTime}] [SYSTEM] Initializing VEKLOM v2.0 Execution Session...`,
+      `[${startFastTime}] [SYSTEM] connection_id generated: conn_${Math.floor(Math.random() * 900000 + 100000)}`
+    ];
+
     for (let i = 1; i <= targetStep; i++) {
-      const stepLogs = finalResult.steps[i - 1]?.details || [];
-      logs.push(`[PHASE ${i}] ${finalResult.steps[i - 1]?.name} processing...`);
+      const stepResultInfo = finalResult.steps[i - 1];
+      const stepName = stepResultInfo?.name || `Phase ${i}`;
+      const stepStatus = stepResultInfo?.status || 'success';
+      const stepTime = new Date().toLocaleTimeString();
+
+      // Log specific compliance check to browser developer console
+      console.log(`[VEKLOM v2.0] [${stepTime}] [STAGE 0${i}] Name: "${stepName}" | Status: ${stepStatus.toUpperCase()} | Fast-Forward Verified`);
+
+      const stepLogs = stepResultInfo?.details || [];
+      logs.push(`[${stepTime}] [PHASE ${i}] ${stepName} - Status: ${stepStatus.toUpperCase()}`);
       logs.push(...stepLogs.map(l => `  > ${l}`));
     }
 
+    const finishTime = new Date().toLocaleTimeString();
     if (targetStep === 9) {
-      logs.push(`[SYSTEM] Compilation finished. Authorization Status: ${finalResult.status.toUpperCase()}`);
+      console.log(`[VEKLOM v2.0] [${finishTime}] [SYSTEM] Compilation finished. Authorization Status: ${finalResult.status.toUpperCase()}`);
+      logs.push(`[${finishTime}] [SYSTEM] Compilation finished. Authorization Status: ${finalResult.status.toUpperCase()}`);
       if (finalResult.evidence) {
-        logs.push(`[SYSTEM] Immutable proof saved successfully to ledger chain: ${finalResult.evidence.pglHash}`);
+        logs.push(`[${finishTime}] [SYSTEM] Immutable proof saved successfully to ledger chain: ${finalResult.evidence.pglHash}`);
       } else {
-        logs.push('[SYSTEM] Suspended state preserved.');
+        logs.push(`[${finishTime}] [SYSTEM] Suspended state preserved.`);
       }
       setCurrentResult(finalResult);
       onSimulationSuccess(finalResult);
     } else {
+      console.log(`[VEKLOM v2.0] [${finishTime}] [SYSTEM] Simulation suspended at Phase 0${targetStep} (Awaiting further pipeline execution)...`);
+      logs.push(`[${finishTime}] [SYSTEM] Simulation suspended at Phase 0${targetStep} (Awaiting further pipeline execution)...`);
       // Create partial result
       setCurrentResult({
         ...finalResult,
@@ -176,15 +247,15 @@ export default function PipelineVisualizer({
   };
 
   const complianceStages = [
-    { id: 1, label: 'Identity', desc: 'Ed25519 Verify' },
-    { id: 2, label: 'Policy Map', desc: 'Composed Rules' },
-    { id: 3, label: 'Anomaly Check', desc: 'Rogue Assessment' },
-    { id: 4, label: 'Budget/Ledger', desc: 'Credit Threshold' },
-    { id: 5, label: 'Quorum Gate', desc: 'Multi-Sig Escrow' },
-    { id: 6, label: 'Execution', desc: 'Secure Sandbox' },
-    { id: 7, label: 'Proof Chain', desc: 'Decentered Chaining' },
-    { id: 8, label: 'Ledger Publish', desc: 'Gnom Commit' },
-    { id: 9, label: 'Secure Seal', desc: 'Signed Delivery' }
+    { id: 1, label: 'Identity', desc: 'Ed25519 Verify', tooltip: 'Verifies cryptographic Ed25519 authorization signatures, ensures non-repudiation, and checks against replay attacks.' },
+    { id: 2, label: 'Policy Map', desc: 'Composed Rules', tooltip: 'Resolves nested permissions, validating request arguments against current user-defined and automatic governance rules.' },
+    { id: 3, label: 'Anomaly Check', desc: 'Rogue Assessment', tooltip: 'Heuristically evaluates prompt patterns for rogue behaviors, prompt injection/jailbreak attempts, or extreme trust index drifts.' },
+    { id: 4, label: 'Budget/Ledger', desc: 'Credit Threshold', tooltip: 'Verifies the current execution balance, enforcing operational credit caps before sending external API queries.' },
+    { id: 5, label: 'Quorum Gate', desc: 'Multi-Sig Escrow', tooltip: 'Inspects multi-signature policies and triggers quarantine overrides for suspicious, high-value transactions.' },
+    { id: 6, label: 'Execution', desc: 'Secure Sandbox', tooltip: 'Dispatches requests inside a containerized sandbox environment, preventing unauthorized filesystem or network operations.' },
+    { id: 7, label: 'Proof Chain', desc: 'Decentered Chaining', tooltip: 'Generates recursive cryptographic hashes to link the current audit event with the historical secure chain database.' },
+    { id: 8, label: 'Ledger Publish', desc: 'Gnom Commit', tooltip: 'Publishes the immutable proof transaction dynamically to the distributed auditing ledger node for public validation.' },
+    { id: 9, label: 'Secure Seal', desc: 'Signed Delivery', tooltip: 'Wraps and encrypts the final secure response with a cryptographic Seal token signed by Veklom Core.' }
   ];
 
   return (
@@ -217,30 +288,71 @@ export default function PipelineVisualizer({
         {/* 9 Stages Responsive Grid list */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-2">
           {complianceStages.map((stage) => {
-            const isCurrent = activeStepIndex === stage.id;
-            const isPassed = activeStepIndex > stage.id || currentResult !== null;
-            const isFuture = activeStepIndex < stage.id && currentResult === null;
+            const status = getStageStatus(stage.id);
+            const isFuture = status === 'pending';
 
             let stageBg = 'bg-[#0B0C0E] border-[#23272E] text-gray-500';
-            if (isCurrent) {
+            let titleColor = 'text-gray-400';
+            let badgeComponent = null;
+
+            if (status === 'active') {
               stageBg = 'bg-blue-950/20 border-blue-500 text-blue-400 shadow-[0_0_10px_rgba(59,130,246,0.15)]';
-            } else if (isPassed) {
+              titleColor = 'text-blue-300';
+              badgeComponent = <span className="text-[8px] bg-blue-950 text-blue-400 px-1 rounded font-bold font-mono uppercase animate-pulse">RUN</span>;
+            } else if (status === 'success') {
               stageBg = 'bg-green-950/10 border-green-900/50 text-green-400';
+              titleColor = 'text-gray-200';
+              badgeComponent = <span className="text-[8px] bg-green-950/40 text-green-400 px-1 rounded font-bold font-mono uppercase">DONE</span>;
+            } else if (status === 'warning') {
+              stageBg = 'bg-[#1C160C] border-amber-800 text-amber-400';
+              titleColor = 'text-amber-300';
+              badgeComponent = <span className="text-[8px] bg-amber-950/40 text-amber-400 px-1 rounded font-bold font-mono uppercase">WARN</span>;
+            } else if (status === 'error') {
+              stageBg = 'bg-[#1F0D0D] border-red-900/50 text-red-400';
+              titleColor = 'text-red-300';
+              badgeComponent = <span className="text-[8px] bg-red-950/40 text-red-500 px-1 rounded font-bold font-mono uppercase">FAIL</span>;
             }
+
+            const arrowButtonStyles = 
+              status === 'active'
+                ? 'bg-blue-500 text-slate-950 border-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.4)]'
+                : status === 'success'
+                ? 'bg-[#15181E] border-green-800 text-green-400 hover:bg-green-950/30'
+                : status === 'warning'
+                ? 'bg-[#15181E] border-amber-800 text-amber-400 hover:bg-amber-950/30'
+                : status === 'error'
+                ? 'bg-[#15181E] border-red-800 text-red-400 hover:bg-red-950/30'
+                : 'bg-[#15181E] border-[#23272E] text-gray-400 hover:text-white hover:border-gray-600 group-hover:border-gray-500 group-hover:text-gray-200';
 
             return (
               <div
                 key={stage.id}
-                onClick={() => !isFuture && runToSpecificStep(stage.id)}
+                onClick={() => runToSpecificStep(stage.id)}
                 className={`relative p-2 rounded border transition-all flex flex-col justify-between h-[72px] cursor-pointer group ${stageBg}`}
               >
+                {/* Custom Elegant Tooltip Component */}
+                <div className={`absolute bottom-full mb-2.5 hidden group-hover:block w-56 bg-[#0B0C0E] border border-blue-900/60 text-gray-100 text-[10px] p-2.5 rounded shadow-[0_10px_25px_rgba(0,0,0,0.8)] z-50 pointer-events-none transition-all duration-200 leading-normal text-left font-sans ${
+                  stage.id <= 2
+                    ? 'left-0 origin-bottom-left'
+                    : stage.id >= 8
+                    ? 'right-0 origin-bottom-right'
+                    : 'left-1/2 -translate-x-1/2 origin-bottom'
+                }`}>
+                  <div className="font-bold text-blue-400 mb-1 flex items-center gap-1 font-mono text-[9px] uppercase tracking-wider border-b border-[#23272E] pb-1">
+                    <span className="w-1 h-1 rounded-full bg-blue-400 animate-pulse" />
+                    Phase 0{stage.id}: {stage.label} check
+                  </div>
+                  <p className="text-gray-300 text-[9.5px] leading-relaxed mt-1">
+                    {stage.tooltip}
+                  </p>
+                </div>
+
                 <div>
                   <div className="flex justify-between items-center">
                     <span className="text-[9px] font-mono font-bold opacity-60">Phase 0{stage.id}</span>
-                    {isPassed && <span className="text-[8px] bg-green-950/40 text-green-400 px-1 rounded font-bold font-mono uppercase">DONE</span>}
-                    {isCurrent && <span className="text-[8px] bg-blue-950 text-blue-400 px-1 rounded font-bold font-mono uppercase animate-pulse">RUN</span>}
+                    {badgeComponent}
                   </div>
-                  <h5 className={`text-[11px] font-bold leading-tight mt-1 truncate ${isCurrent ? 'text-blue-300' : isPassed ? 'text-gray-200' : 'text-gray-400'}`}>
+                  <h5 className={`text-[11px] font-bold leading-tight mt-1 truncate ${titleColor}`}>
                     {stage.label}
                   </h5>
                   <p className="text-[9px] text-gray-500 font-mono truncate leading-none mt-0.5">{stage.desc}</p>
@@ -253,13 +365,7 @@ export default function PipelineVisualizer({
                     e.stopPropagation();
                     runToSpecificStep(stage.id);
                   }}
-                  className={`absolute bottom-1.5 right-1.5 p-1 rounded transition-all border ${
-                    isCurrent
-                      ? 'bg-blue-500 text-slate-950 border-blue-400'
-                      : isPassed
-                      ? 'bg-[#15181E] border-green-800 text-green-400 hover:bg-green-950/30'
-                      : 'bg-[#15181E] border-[#23272E] text-gray-400 hover:text-white hover:border-gray-600 group-hover:border-gray-500 group-hover:text-gray-200'
-                  }`}
+                  className={`absolute bottom-1.5 right-1.5 p-1 rounded transition-all border ${arrowButtonStyles}`}
                   title={`Run simulation directly up to Stage ${stage.id}`}
                 >
                   <ArrowRight className="w-2.5 h-2.5" />
@@ -374,7 +480,7 @@ export default function PipelineVisualizer({
               )}
               {streamedLogs.map((log, lIdx) => {
                 let color = 'text-gray-400';
-                if (log.startsWith('[SYSTEM]')) color = 'text-blue-400 font-bold';
+                if (log.includes('[SYSTEM]')) color = 'text-blue-400 font-bold';
                 else if (log.includes('[PHASE')) color = 'text-green-400 font-bold';
                 else if (log.includes('CRITICAL') || log.includes('EXPLOIT') || log.includes('SECURITY')) color = 'text-red-400 font-bold';
                 else if (log.includes('warning') || log.includes('ANOMALY') || log.includes('Quarantine')) color = 'text-amber-400';
@@ -413,9 +519,10 @@ export default function PipelineVisualizer({
             <div className="space-y-2 relative before:absolute before:left-5 before:top-2 before:bottom-2 before:w-[1px] before:bg-[#23272E]">
               {Array.from({ length: 9 }).map((_, i) => {
                 const phaseNum = i + 1;
-                const isCurrent = activeStepIndex === phaseNum;
-                const isPast = activeStepIndex > phaseNum || currentResult !== null;
-                const isFuture = activeStepIndex < phaseNum && currentResult === null;
+                const status = getStageStatus(phaseNum);
+                const isCurrent = status === 'active';
+                const isPast = status === 'success' || status === 'warning' || status === 'error';
+                const isFuture = status === 'pending';
 
                 // Phase definitions
                 const titles = [
@@ -442,7 +549,6 @@ export default function PipelineVisualizer({
                 ];
 
                 const stepResult = currentResult ? currentResult.steps[i] : null;
-                const status = isPast ? (stepResult?.status || 'success') : isCurrent ? 'active' : 'pending';
 
                 let statusColor = 'text-gray-500 bg-[#0B0C0E] border-[#23272E]';
                 let iconContent = <HelpCircle className="w-3.5 h-3.5" />;
