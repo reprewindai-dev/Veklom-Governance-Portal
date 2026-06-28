@@ -165,8 +165,85 @@ export default function PolicyManager({
     };
 
     onAddPolicyRule(targetPolicyId, rule);
-    alert(`Successfully generated and appended rule [${ruleId}] to chosen governance block!`);
+    
+    const conflictsCount = validationWarnings.filter(w => w.type === 'conflict').length;
+    let alertMsg = `Successfully generated and appended rule [${ruleId}] to chosen governance block!`;
+    if (conflictsCount > 0) {
+      alertMsg += `\n\n⚠️ Disclaimer: Note that this rule creates ${conflictsCount} active conflict(s) or shadowing exceptions.`;
+    }
+    alert(alertMsg);
   };
+
+  // Real-time conflict or redundancy checker across the entire policy tree
+  const getValidationWarnings = () => {
+    const warnings: { type: 'conflict' | 'redundancy'; message: string; ruleId: string; policyName: string; policyType: string }[] = [];
+
+    // Find the policy layer details we are targetting
+    const targetPolicy = policies.find(p => p.id === targetPolicyId);
+    if (!targetPolicy) return warnings;
+
+    // Evaluate against each active policy
+    for (const p of policies) {
+      if (!p.active) continue;
+
+      for (const r of p.rules) {
+        // Overlap exists if:
+        // 1. One principal is '*' or both are identical
+        // 2. One action is '*' or both are identical
+        const principalOverlap = r.principal === '*' || newAgent === '*' || r.principal === newAgent;
+        const actionOverlap = r.action === '*' || newCap === '*' || r.action === newCap;
+
+        if (principalOverlap && actionOverlap) {
+          if (r.effect === newEffect) {
+            // REDUNDANCY: Exist is equal/broader scope, rendering the new rule redundant
+            const existingIsAsBroadOrBroader = (r.principal === '*' || r.principal === newAgent) && 
+                                               (r.action === '*' || r.action === newCap);
+            if (existingIsAsBroadOrBroader) {
+              warnings.push({
+                type: 'redundancy',
+                message: `This rule is redundant. Active policy "${p.name}" contains an active rule "${r.id}" which already enforces "${r.effect.toUpperCase()}" for this matching scope.`,
+                ruleId: r.id,
+                policyName: p.name,
+                policyType: p.type
+              });
+            }
+          } else {
+            // CONFLICT: Opposite policy effects (Shadowing or Contradictions)
+            // Priorities: system (3) > owner (2) > runtime (1)
+            const getPriority = (type: string) => {
+              if (type === 'system') return 3;
+              if (type === 'owner') return 2;
+              return 1;
+            };
+
+            const existingPriority = getPriority(p.type);
+            const targetPriority = getPriority(targetPolicy.type);
+
+            let explanation = '';
+            if (existingPriority > targetPriority) {
+              explanation = `Rule SHADOWED: The higher-priority "${p.name}" (${p.type} layer) already enforces "${r.effect.toUpperCase()}" for this scope. Your new rule will be ignored in practice.`;
+            } else if (existingPriority < targetPriority) {
+              explanation = `Rule OVERRIDE: This rule will override the lower-priority rule "${r.id}" in "${p.name}" (${p.type} layer) which specifies "${r.effect.toUpperCase()}". Ensure this override is intended.`;
+            } else {
+              explanation = `CONTRADICTION: Inside the same tier ("${p.name}"), rule "${r.id}" specifies "${r.effect.toUpperCase()}", directly opposing your requested "${newEffect.toUpperCase()}". Verification outcomes may be non-deterministic.`;
+            }
+
+            warnings.push({
+              type: 'conflict',
+              message: explanation,
+              ruleId: r.id,
+              policyName: p.name,
+              policyType: p.type
+            });
+          }
+        }
+      }
+    }
+
+    return warnings;
+  };
+
+  const validationWarnings = getValidationWarnings();
 
   return (
     <div className="space-y-4" id="policies-tab">
@@ -437,6 +514,45 @@ export default function PolicyManager({
                 </label>
               </div>
             </div>
+
+            {/* Real-time Policy Overlap / Conflict Validation Warning Alert */}
+            {validationWarnings.length > 0 && (
+              <div id="policy-validation-alert" className="bg-[#1C130D] border border-amber-600/30 p-3 rounded space-y-2 mt-2 transition-all">
+                <div className="flex items-center gap-1.5 text-amber-500 font-mono text-[9.5px] font-bold uppercase tracking-wider">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  Policy Validation Alerts ({validationWarnings.length})
+                </div>
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  {validationWarnings.map((warning, wIdx) => {
+                    const isConflict = warning.type === 'conflict';
+                    const isShadowed = warning.message.includes('SHADOWED');
+                    const badgeText = isConflict ? (isShadowed ? 'SHADOWED' : 'OVERRIDE') : 'REDUNDANT';
+                    const badgeColor = isConflict 
+                      ? (isShadowed ? 'bg-red-950/40 text-red-400 border border-red-900/60' : 'bg-blue-950/40 text-blue-400 border border-blue-900/60') 
+                      : 'bg-amber-950/40 text-amber-400 border border-amber-900/60';
+
+                    return (
+                      <div 
+                        key={wIdx} 
+                        className={`text-[10px] p-2 rounded border font-mono leading-relaxed transition-all ${
+                          isConflict 
+                            ? (isShadowed ? 'bg-red-950/15 border-red-950/50 text-red-300' : 'bg-blue-950/10 border-blue-950/40 text-blue-300')
+                            : 'bg-amber-950/15 border-amber-950/40 text-amber-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center mb-1 font-bold">
+                          <span className={`text-[8.5px] px-1.5 py-0.5 rounded uppercase font-bold ${badgeColor}`}>
+                            {badgeText}
+                          </span>
+                          <span className="text-gray-500 text-[9px] font-normal font-mono">ID: {warning.ruleId}</span>
+                        </div>
+                        <p className="opacity-90">{warning.message}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <button
               type="submit"

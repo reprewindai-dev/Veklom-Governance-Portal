@@ -9,8 +9,11 @@ export interface Agent {
   budgetUsed: number;
   publicKey: string;
   anomalyCount: number;
+  consecutiveAnomalies: number;
   category: 'system' | 'user' | 'service';
   framework: string;
+  bio?: string;
+  technicalSummary?: string;
 }
 
 export interface Capability {

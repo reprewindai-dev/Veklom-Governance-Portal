@@ -121,6 +121,55 @@ export default function App() {
     );
   };
 
+  // Add agent
+  const handleAddAgent = (newAgent: Agent) => {
+    setAgents(prev => [...prev, newAgent]);
+  };
+
+  // Generate or regenerate an agent's operational profile using Gemini via our proxy endpoint
+  const handleGenerateProfile = async (agentId: string): Promise<{ bio: string; technicalSummary: string } | null> => {
+    const targetAgent = agents.find(a => a.id === agentId);
+    if (!targetAgent) return null;
+
+    try {
+      const response = await fetch("/api/gemini/generate-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: targetAgent.name,
+          category: targetAgent.category,
+          framework: targetAgent.framework,
+          ownerId: targetAgent.ownerId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Profile generation failed");
+      }
+
+      const profile = await response.json();
+      
+      // Update the agent profile in our local state
+      setAgents(prev =>
+        prev.map(agent => {
+          if (agent.id === agentId) {
+            return {
+              ...agent,
+              bio: profile.bio,
+              technicalSummary: profile.technicalSummary,
+            };
+          }
+          return agent;
+        })
+      );
+      return profile;
+    } catch (err) {
+      console.error("Failed to generate profile for agent:", err);
+      throw err;
+    }
+  };
+
   // Dynamic success/credits callback when pipeline simulation ends successfully
   const handleSimulationSuccess = (res: SimulationResult) => {
     if (res.status === 'authorized' && res.evidence) {
@@ -135,7 +184,8 @@ export default function App() {
             return {
               ...agent,
               trustScore: Math.min(100, agent.trustScore + 2),
-              budgetUsed: Math.min(agent.budgetLimit, agent.budgetUsed + expense)
+              budgetUsed: Math.min(agent.budgetLimit, agent.budgetUsed + expense),
+              consecutiveAnomalies: 0
             };
           }
           return agent;
@@ -155,7 +205,8 @@ export default function App() {
             return {
               ...agent,
               trustScore: Math.max(0, agent.trustScore - 15),
-              anomalyCount: agent.anomalyCount + 1
+              anomalyCount: agent.anomalyCount + 1,
+              consecutiveAnomalies: agent.consecutiveAnomalies + 1
             };
           }
           return agent;
@@ -170,7 +221,8 @@ export default function App() {
             return {
               ...agent,
               trustScore: Math.max(0, agent.trustScore - 10),
-              anomalyCount: agent.anomalyCount + anomalyBonus
+              anomalyCount: agent.anomalyCount + anomalyBonus,
+              consecutiveAnomalies: agent.consecutiveAnomalies + anomalyBonus
             };
           }
           return agent;
@@ -222,6 +274,8 @@ export default function App() {
       })
     );
   };
+
+  const hasRogueRisk = agents.some(a => a.consecutiveAnomalies > 3);
 
   return (
     <div className="min-h-screen bg-[#0B0C0E] text-[#D1D5DB] flex flex-col font-sans select-none antialiased">
@@ -340,10 +394,26 @@ export default function App() {
                     <Signature className="w-3.5 h-3.5 text-red-400" />
                     Quarantine Zone
                   </span>
-                  {quarantineTickets.filter(t => t.status === 'pending').length > 0 && (
-                    <span className="bg-red-950/40 text-red-400 border border-red-900/40 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded">
-                      {quarantineTickets.filter(t => t.status === 'pending').length}
-                    </span>
+                  {(quarantineTickets.filter(t => t.status === 'pending').length > 0 || hasRogueRisk) && (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {hasRogueRisk && (
+                        <span 
+                          title="CRITICAL: Rogue Agent Risk detected (Agent has >3 consecutive anomalies)" 
+                          className="flex h-2 w-2 relative"
+                        >
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                        </span>
+                      )}
+                      <span className={`font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border transition-all ${
+                        hasRogueRisk
+                          ? 'bg-red-950/80 text-red-400 border-red-500/60 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.3)]'
+                          : 'bg-red-950/40 text-red-200 border-red-900/40'
+                      }`}>
+                        {quarantineTickets.filter(t => t.status === 'pending').length}
+                        {hasRogueRisk && ' !'}
+                      </span>
+                    </div>
                   )}
                 </button>
 
@@ -455,6 +525,8 @@ export default function App() {
               onToggleAgentStatus={handleToggleAgentStatus}
               onResetSystem={handleResetSystem}
               onSelectTab={setActiveTab}
+              onAddAgent={handleAddAgent}
+              onGenerateProfile={handleGenerateProfile}
             />
           )}
 
@@ -480,6 +552,7 @@ export default function App() {
           {activeTab === 'quarantine' && (
             <QuarantineCenter
               tickets={quarantineTickets}
+              agents={agents}
               onApproveTicket={handleApproveQuarantineTicket}
               onDenyTicket={handleDenyQuarantineTicket}
               onAppendLedgerBlock={(block) => setLedger(prev => [block, ...prev])}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Evidence, QuarantinedTicket } from '../types';
+import { Evidence, QuarantinedTicket, Agent } from '../types';
 import { calculateSHA256 } from '../scenarios';
 import { ShieldAlert, Users, CheckCircle, Clock, AlertOctagon, Signature, HelpCircle, ArrowRight } from 'lucide-react';
 
@@ -8,18 +8,24 @@ interface QuarantineCenterProps {
   onApproveTicket: (ticketId: string, updatedTicket: QuarantinedTicket, newEvidenceBlock: Evidence) => void;
   onDenyTicket: (ticketId: string) => void;
   onAppendLedgerBlock: (block: Evidence) => void;
+  agents?: Agent[];
 }
 
 export default function QuarantineCenter({
   tickets,
   onApproveTicket,
   onDenyTicket,
-  onAppendLedgerBlock
+  onAppendLedgerBlock,
+  agents = []
 }: QuarantineCenterProps) {
   // Currently active quarantine ticket being reviewed
   const [activeTicketId, setActiveTicketId] = useState<string | null>(
     tickets.find(t => t.status === 'pending')?.ticketId || null
   );
+
+  // Identify rogue agents exceeding 3 consecutive anomalies
+  const rogueAgents = agents.filter(agent => agent.consecutiveAnomalies > 3);
+
 
   // Signer slots states
   const [boardSigners, setBoardSigners] = useState([
@@ -116,6 +122,35 @@ export default function QuarantineCenter({
 
   return (
     <div className="space-y-4" id="quarantine-tab">
+      {rogueAgents.length > 0 && (
+        <div className="bg-red-950/20 border border-red-500/50 p-4 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-[0_4px_25px_rgba(239,68,68,0.15)] animate-pulse">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-red-950 text-red-500 rounded border border-red-500/40 shrink-0">
+              <AlertOctagon className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-red-500 uppercase tracking-widest flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
+                Rogue Agent Risk Warning
+              </h4>
+              <p className="text-[11px] text-gray-400 mt-1 max-w-2xl leading-relaxed">
+                Critical threshold breached! The following autonomous intelligence agents have exceeded <strong className="text-red-400 font-mono">3 consecutive anomalies</strong> without successful compliance clearings. Executive override containment procedures are advised.
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {rogueAgents.map(ag => (
+                  <span key={ag.id} className="bg-red-950/60 text-red-400 border border-red-900/60 text-[9.5px] font-mono px-2 py-0.5 rounded font-bold">
+                    {ag.name}: {ag.consecutiveAnomalies} CONSECUTIVE ANOMALIES
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="text-[10px] bg-red-950 text-red-400 font-mono font-bold px-2.5 py-1 rounded border border-red-500/40 uppercase tracking-widest whitespace-nowrap">
+            HALT AGENT RUNS
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
         {/* Outstanding Tickets Queue (Left 4 Cols) */}
         <div className="bg-[#0F1115] border border-[#23272E] p-4 rounded xl:col-span-4 space-y-4">

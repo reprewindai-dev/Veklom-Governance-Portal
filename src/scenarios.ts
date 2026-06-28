@@ -65,6 +65,7 @@ export const INITIAL_AGENTS: Agent[] = [
     budgetUsed: 120,
     publicKey: 'ed25519_pub_e942f10283bd74efcda',
     anomalyCount: 0,
+    consecutiveAnomalies: 0,
     category: 'service',
     framework: 'Veklom Frame v1.2'
   },
@@ -79,6 +80,7 @@ export const INITIAL_AGENTS: Agent[] = [
     budgetUsed: 980, // almost used up!
     publicKey: 'ed25519_pub_ff2084bce12040d9981',
     anomalyCount: 1,
+    consecutiveAnomalies: 1,
     category: 'system',
     framework: 'Veklom Daemon v2.0'
   },
@@ -93,6 +95,7 @@ export const INITIAL_AGENTS: Agent[] = [
     budgetUsed: 20,
     publicKey: 'ed25519_pub_ab0911fe7703e230a10',
     anomalyCount: 4,
+    consecutiveAnomalies: 4,
     category: 'user',
     framework: 'LangChain-Native Bridge'
   }
